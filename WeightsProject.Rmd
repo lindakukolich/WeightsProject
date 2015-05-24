@@ -1,0 +1,115 @@
+---
+title: "Weight Lifting Style Detection"
+author: "Linda Kukolich"
+date: "May 24, 2015"
+output: html_document
+---
+# Detecting Proper Weight Lifting Technique using On-Body Sensors
+
+This work is based on the following paper: [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf) from Velloso _et al._ It describes an experiment where six male participants with little weight lifting experience performed Biceps Curls using each of five techniques. One was exactly correct, and the other four reflected common techinque errors.
+
+The task here, then, is to take labeled training data provided by Velloso _et al._ and train a machine learning algorithm that can successfully predict which of the five Biceps Curl techniques was used based on on-body sensor readings.
+
+The full original dataset is found at [http://groupware.les.inf.puc-rio.br/static/WLE/WearableComputing_weight_lifting_exercises_biceps_curl_variations.csv]. For this course we used a portion of the original data, found here [https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv]
+
+```{r globals}
+library(caret)
+library(randomForest)
+trainFileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+trainFile <- "data/pml-training.csv"
+```
+
+```{r download, cache=TRUE}
+trainFileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+trainFile <- "data/pml-training.csv"
+if (! file.exists("./data")) {
+    dir.create("./data")
+}
+if (! file.exists(trainFile)) {
+    download.file(trainFileUrl, destfile = trainFile, method = "curl")
+    print(paste("downloaded on", date()))
+}
+```
+```{r read}
+rawWeightsTR <- read.csv(trainFile)
+```
+
+The original data has two types of readings. The raw readings from the on-body 
+sensors, and windowed readings where calculations are performed    on a collection
+ of multiple raw readings. In the original paper these windowed    results    were the main features    provided to their classifiers. For the testing data we will work with,	only the raw readings are provided. It is therefore necessary to remove
+ the windowed values from our data set.
+```{r clean, dependson='read'}
+## Remove the rows that say "new_window"
+weightsTR <- rawWeightsTR[rawWeightsTR$new_window == "no",]
+columns <- colnames(weightsTR)
+# remove columns that contain:
+# time and identity labels that cannot be helpful for future work
+# calculated values that are absent in the testing data
+omit <- c(1, 2) # X and user_name
+omit <- c(omit, grep("window", columns, value=FALSE))
+omit <- c(omit, grep("timestamp", columns, value=FALSE))
+omit <- c(omit, grep("kurtosis", columns, value=FALSE))
+omit <- c(omit, grep("skewness", columns, value=FALSE))
+omit <- c(omit, grep("max", columns, value=FALSE))
+omit <- c(omit, grep("min", columns, value=FALSE))
+omit <- c(omit, grep("amplitude", columns, value=FALSE))
+omit <- c(omit, grep("avg", columns, value=FALSE))
+omit <- c(omit, grep("var", columns, value=FALSE))
+omit <- c(omit, grep("stddev", columns, value=FALSE))
+weightsTR <- weightsTR[,-omit]
+```
+
+Due to time constraints and a need to evaluate which of the many available machine learning algorithms to use for final submission, I have divided the training data into training and testing subsets. This will also leave a portion of the data available to evaluate which machine learning algorithm performs best on new data. This allows me to avoid using K-fold cross-validation to create an estimate of the out-of-sample error rate, which would take more time to train each of the K models to generate each of the K error rates. Instead I am training once on a larger subset of the data and getting a single estimate of the performance of the algorithms. This does not allow me to characterize the possible variance of the error rate I get, but it is faster to run.
+```{r subsets, cache=TRUE, dependson='clean'}
+set.seed(13445)
+inTrain <- createDataPartition(y=weightsTR$classe,
+                              p=0.33, list=FALSE)
+training <- weightsTR[inTrain,]
+testing <- weightsTR[-inTrain,]
+dim(training); dim(testing)
+```
+
+I trained three different tree classifiers, a simple Classification and Regression Tree, a tree based on Stochastic Gradient Boosting (described [here](http://www.statsoft.com/Textbook/Boosting-Trees-Regression-Classification)) and a random forest (described [here](http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr)).
+
+With a Classification and Regression Tree, each variable is scanned to find the position that best separates the data by identifier. The best such value for a variable is selected and the data is split accordingly. The process of selecting variables and values continues till all the training data is correctly classified or till a certain number of splitting values has been found.
+
+The Gradient Boosting tree works by making very small CART trees, but by selecting a new subset of the training data when training each node. This gives each node an estimate of out-of-sample error for that node. The process for each node is then
+
+- select a subset of the data
+- test that subset against all existing nodes, finding those observations which are incorrectly identified (the residuals)
+- train a node based on those residual observations
+
+The random forest works instead by training multiple CART trees, using a random subset of the data and a random subset of the input variables for each tree. Prediction for the random forest tests each observation against all the trees. The class selected by the most trees in the forest is the class selected by the forest.
+
+```{r trainCart, cache=TRUE, dependson='subsets'}
+trueClasses <- testing$classe
+
+modCart <- train(classe ~ ., data=training, method="rpart")
+predictionCart <- predict(modCart, newdata=testing)
+scoreCart <- mean(predictionCart != trueClasses)
+```
+```{r trainGbm, cache=TRUE, dependson='subsets'}
+modGbm <- train(classe ~ ., data=training, method="gbm", verbose=FALSE)
+predictionGbm <- predict(modGbm, newdata=testing)
+scoreGbm <- mean(predictionGbm != trueClasses)
+```
+```{r trainRf, cache=TRUE, dependson='subsets'}
+modRf <- randomForest(classe ~ ., data=training)
+predictionRf <- predict(modRf, newdata=testing)
+scoreRf <- mean(predictionRf != trueClasses)
+```
+
+Each classifier was tested against the held out training data, giving the following rate for incorrectly identifying the style of movement for each Biceps Curl observation:
+
+### Percent Incorrect Classification
+| Classification Tree | Gradient Boosting | Random Forest |
+| ----------------- | ----------------- | -------------
+|
+| `r round(100*scoreCart, 2)` | `r round(100*scoreGbm, 2)` | `r round(100*scoreRf, 2)` |
+
+The random forest has the lowest error rate, and will be used to label the testing data that is the second part of this project. I expect a classification error rate of less than 5% on the final testing data, although if the points selected for the test are not similar to the "average" observations in the training set, my results may be worse than that.
+
+To give me the best chance of doing well on the actual testing data, I trained the random forest on all available training data.
+```{r final, dependson='trainRf', cache=TRUE}
+modRfFull <- randomForest(classe ~ ., data=weightsTR)
+```
