@@ -112,4 +112,30 @@ The random forest has the lowest error rate, and will be used to label the testi
 To give me the best chance of doing well on the actual testing data, I trained the random forest on all available training data.
 ```{r final, dependson='trainRf', cache=TRUE}
 modRfFull <- randomForest(classe ~ ., data=weightsTR)
+
+testFileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+testFile <- "data/pml-testing.csv"
+if (! file.exists(testFile)) {
+    download.file(testFileUrl, destfile = testFile, method = "curl")
+    print(paste("downloaded on", date()))
+}
+weightsTST <- read.csv(testFile)
+answers <- predict(modRfFull, newdata=weightsTST)
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+setwd("testFiles")
+pml_write_files(answers)
 ```
+
+## Bibliography
+
+The full reference for our source data is:
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Read more: [http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz3b4qYtVY3]
