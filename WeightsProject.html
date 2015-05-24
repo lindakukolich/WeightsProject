@@ -163,13 +163,37 @@ scoreRf &lt;- mean(predictionRf != trueClasses)</code></pre>
 <tr class="even">
 <td align="left">50.96</td>
 <td align="left">5.1</td>
-<td align="left">3</td>
+<td align="left">1.67</td>
 </tr>
 </tbody>
 </table>
 <p>The random forest has the lowest error rate, and will be used to label the testing data that is the second part of this project. I expect a classification error rate of less than 5% on the final testing data, although if the points selected for the test are not similar to the “average” observations in the training set, my results may be worse than that.</p>
 <p>To give me the best chance of doing well on the actual testing data, I trained the random forest on all available training data.</p>
-<pre class="r"><code>modRfFull &lt;- randomForest(classe ~ ., data=weightsTR)</code></pre>
+<pre class="r"><code>modRfFull &lt;- randomForest(classe ~ ., data=weightsTR)
+
+testFileUrl &lt;- &quot;https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv&quot;
+testFile &lt;- &quot;data/pml-testing.csv&quot;
+if (! file.exists(testFile)) {
+    download.file(testFileUrl, destfile = testFile, method = &quot;curl&quot;)
+    print(paste(&quot;downloaded on&quot;, date()))
+}
+weightsTST &lt;- read.csv(testFile)
+answers &lt;- predict(modRfFull, newdata=weightsTST)
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0(&quot;problem_id_&quot;,i,&quot;.txt&quot;)
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+setwd(&quot;testFiles&quot;)
+pml_write_files(answers)</code></pre>
+</div>
+<div id="bibliography" class="section level2">
+<h2>Bibliography</h2>
+<p>The full reference for our source data is:</p>
+<p>Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human ’13) . Stuttgart, Germany: ACM SIGCHI, 2013.</p>
+<p>Read more: [<a href="http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz3b4qYtVY3" class="uri">http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz3b4qYtVY3</a>]</p>
 </div>
 </div>
 
