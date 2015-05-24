@@ -59,7 +59,8 @@ omit <- c(omit, grep("stddev", columns, value=FALSE))
 weightsTR <- weightsTR[,-omit]
 ```
 
-Due to time constraints and a need to evaluate which of the many available machine learning algorithms to use for final submission, I have divided the training data into training and testing subsets. This will also leave a portion of the data available to evaluate which machine learning algorithm performs best on new data. This allows me to avoid using K-fold cross-validation to create an estimate of the out-of-sample error rate, which would take more time to train each of the K models to generate each of the K error rates. Instead I am training once on a larger subset of the data and getting a single estimate of the performance of the algorithms. This does not allow me to characterize the possible variance of the error rate I get, but it is faster to run.
+Due to time constraints and a need to evaluate which of the many available machine learning algorithms to use for final submission, I have divided the training data into training and testing subsets. This will also leave a portion of the data available to evaluate which machine learning algorithm performs best on new data. In addition, I am training using 10-fold cross validation to get multiple estimates of the error rate on the training data. This will allow me to select the best algorithm and have some idea of the range of possible values for the error rate on the final test. Sadly, I haven't yet been able to find a way to get those fold-by-fold error rates from R, so I will make my decisions solely on the error rate from the 2/3 of the data that was held out to make the training faster.
+
 ```{r subsets, cache=TRUE, dependson='clean'}
 set.seed(13445)
 inTrain <- createDataPartition(y=weightsTR$classe,
@@ -67,6 +68,9 @@ inTrain <- createDataPartition(y=weightsTR$classe,
 training <- weightsTR[inTrain,]
 testing <- weightsTR[-inTrain,]
 dim(training); dim(testing)
+fitControl <- trainControl(method = "repeatedcv",
+                           number = 10,
+                           repeats = 10)
 ```
 
 I trained three different tree classifiers, a simple Classification and Regression Tree, a tree based on Stochastic Gradient Boosting (described [here](http://www.statsoft.com/Textbook/Boosting-Trees-Regression-Classification)) and a random forest (described [here](http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr)).
@@ -84,17 +88,20 @@ The random forest works instead by training multiple CART trees, using a random 
 ```{r trainCart, cache=TRUE, dependson='subsets'}
 trueClasses <- testing$classe
 
-modCart <- train(classe ~ ., data=training, method="rpart")
+modCart <- train(classe ~ ., data=training, method="rpart", trControl = fitControl)
+modCart
 predictionCart <- predict(modCart, newdata=testing)
 scoreCart <- mean(predictionCart != trueClasses)
 ```
 ```{r trainGbm, cache=TRUE, dependson='subsets'}
-modGbm <- train(classe ~ ., data=training, method="gbm", verbose=FALSE)
+modGbm <- train(classe ~ ., data=training, method="gbm", verbose=FALSE, trControl = fitControl)
+modGbm
 predictionGbm <- predict(modGbm, newdata=testing)
 scoreGbm <- mean(predictionGbm != trueClasses)
 ```
 ```{r trainRf, cache=TRUE, dependson='subsets'}
-modRf <- randomForest(classe ~ ., data=training)
+modRf <- randomForest(classe ~ ., data=training, trControl = fitControl)
+modRf
 predictionRf <- predict(modRf, newdata=testing)
 scoreRf <- mean(predictionRf != trueClasses)
 ```

@@ -101,7 +101,7 @@ omit &lt;- c(omit, grep(&quot;avg&quot;, columns, value=FALSE))
 omit &lt;- c(omit, grep(&quot;var&quot;, columns, value=FALSE))
 omit &lt;- c(omit, grep(&quot;stddev&quot;, columns, value=FALSE))
 weightsTR &lt;- weightsTR[,-omit]</code></pre>
-<p>Due to time constraints and a need to evaluate which of the many available machine learning algorithms to use for final submission, I have divided the training data into training and testing subsets. This will also leave a portion of the data available to evaluate which machine learning algorithm performs best on new data. This allows me to avoid using K-fold cross-validation to create an estimate of the out-of-sample error rate, which would take more time to train each of the K models to generate each of the K error rates. Instead I am training once on a larger subset of the data and getting a single estimate of the performance of the algorithms. This does not allow me to characterize the possible variance of the error rate I get, but it is faster to run.</p>
+<p>Due to time constraints and a need to evaluate which of the many available machine learning algorithms to use for final submission, I have divided the training data into training and testing subsets. This will also leave a portion of the data available to evaluate which machine learning algorithm performs best on new data. In addition, I am training using 10-fold cross validation to get multiple estimates of the error rate on the training data. This will allow me to select the best algorithm and have some idea of the range of possible values for the error rate on the final test. Sadly, I haven’t yet been able to find a way to get those fold-by-fold error rates from R, so I will make my decisions solely on the error rate from the 2/3 of the data that was held out to make the training faster.</p>
 <pre class="r"><code>set.seed(13445)
 inTrain &lt;- createDataPartition(y=weightsTR$classe,
                               p=0.33, list=FALSE)
@@ -110,6 +110,9 @@ testing &lt;- weightsTR[-inTrain,]
 dim(training); dim(testing)</code></pre>
 <pre><code>## [1] 6344   53</code></pre>
 <pre><code>## [1] 12872    53</code></pre>
+<pre class="r"><code>fitControl &lt;- trainControl(method = &quot;repeatedcv&quot;,
+                           number = 10,
+                           repeats = 10)</code></pre>
 <p>I trained three different tree classifiers, a simple Classification and Regression Tree, a tree based on Stochastic Gradient Boosting (described <a href="http://www.statsoft.com/Textbook/Boosting-Trees-Regression-Classification">here</a>) and a random forest (described <a href="http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr">here</a>).</p>
 <p>With a Classification and Regression Tree, each variable is scanned to find the position that best separates the data by identifier. The best such value for a variable is selected and the data is split accordingly. The process of selecting variables and values continues till all the training data is correctly classified or till a certain number of splitting values has been found.</p>
 <p>The Gradient Boosting tree works by making very small CART trees, but by selecting a new subset of the training data when training each node. This gives each node an estimate of out-of-sample error for that node. The process for each node is then</p>
@@ -121,29 +124,90 @@ dim(training); dim(testing)</code></pre>
 <p>The random forest works instead by training multiple CART trees, using a random subset of the data and a random subset of the input variables for each tree. Prediction for the random forest tests each observation against all the trees. The class selected by the most trees in the forest is the class selected by the forest.</p>
 <pre class="r"><code>trueClasses &lt;- testing$classe
 
-modCart &lt;- train(classe ~ ., data=training, method=&quot;rpart&quot;)</code></pre>
-<pre><code>## Loading required package: rpart</code></pre>
+modCart &lt;- train(classe ~ ., data=training, method=&quot;rpart&quot;, trControl = fitControl)
+modCart</code></pre>
+<pre><code>## CART 
+## 
+## 6344 samples
+##   52 predictor
+##    5 classes: 'A', 'B', 'C', 'D', 'E' 
+## 
+## No pre-processing
+## Resampling: Cross-Validated (10 fold, repeated 10 times) 
+## 
+## Summary of sample sizes: 5710, 5710, 5709, 5710, 5708, 5710, ... 
+## 
+## Resampling results across tuning parameters:
+## 
+##   cp          Accuracy   Kappa       Accuracy SD  Kappa SD  
+##   0.03547818  0.5163643  0.36826290  0.02044665   0.02745038
+##   0.06331717  0.4251225  0.22258283  0.06246895   0.10449648
+##   0.11899515  0.3272394  0.06492603  0.03959495   0.06044759
+## 
+## Accuracy was used to select the optimal model using  the largest value.
+## The final value used for the model was cp = 0.03547818.</code></pre>
 <pre class="r"><code>predictionCart &lt;- predict(modCart, newdata=testing)
 scoreCart &lt;- mean(predictionCart != trueClasses)</code></pre>
-<pre class="r"><code>modGbm &lt;- train(classe ~ ., data=training, method=&quot;gbm&quot;, verbose=FALSE)</code></pre>
-<pre><code>## Loading required package: gbm</code></pre>
-<pre><code>## Warning: package 'gbm' was built under R version 3.1.3</code></pre>
-<pre><code>## Loading required package: survival
-## Loading required package: splines
+<pre class="r"><code>modGbm &lt;- train(classe ~ ., data=training, method=&quot;gbm&quot;, verbose=FALSE, trControl = fitControl)
+modGbm</code></pre>
+<pre><code>## Stochastic Gradient Boosting 
 ## 
-## Attaching package: 'survival'
+## 6344 samples
+##   52 predictor
+##    5 classes: 'A', 'B', 'C', 'D', 'E' 
 ## 
-## The following object is masked from 'package:caret':
+## No pre-processing
+## Resampling: Cross-Validated (10 fold, repeated 10 times) 
 ## 
-##     cluster
+## Summary of sample sizes: 5709, 5711, 5711, 5708, 5708, 5710, ... 
 ## 
-## Loading required package: parallel
-## Loaded gbm 2.1.1
-## Loading required package: plyr</code></pre>
+## Resampling results across tuning parameters:
+## 
+##   interaction.depth  n.trees  Accuracy   Kappa      Accuracy SD
+##   1                   50      0.7627741  0.6992529  0.01743448 
+##   1                  100      0.8232689  0.7762018  0.01624709 
+##   1                  150      0.8554567  0.8169962  0.01422389 
+##   2                   50      0.8579287  0.8199503  0.01439351 
+##   2                  100      0.9040825  0.8785846  0.01201378 
+##   2                  150      0.9245109  0.9044470  0.01122645 
+##   3                   50      0.8930819  0.8646206  0.01362958 
+##   3                  100      0.9319038  0.9138149  0.01027354 
+##   3                  150      0.9513705  0.9384590  0.00996092 
+##   Kappa SD  
+##   0.02213637
+##   0.02062440
+##   0.01803842
+##   0.01830027
+##   0.01522086
+##   0.01421770
+##   0.01726844
+##   0.01301596
+##   0.01260715
+## 
+## Tuning parameter 'shrinkage' was held constant at a value of 0.1
+## Accuracy was used to select the optimal model using  the largest value.
+## The final values used for the model were n.trees = 150,
+##  interaction.depth = 3 and shrinkage = 0.1.</code></pre>
 <pre class="r"><code>predictionGbm &lt;- predict(modGbm, newdata=testing)
 scoreGbm &lt;- mean(predictionGbm != trueClasses)</code></pre>
-<pre class="r"><code>modRf &lt;- randomForest(classe ~ ., data=training)
-predictionRf &lt;- predict(modRf, newdata=testing)
+<pre class="r"><code>modRf &lt;- randomForest(classe ~ ., data=training, trControl = fitControl)
+modRf</code></pre>
+<pre><code>## 
+## Call:
+##  randomForest(formula = classe ~ ., data = training, trControl = fitControl) 
+##                Type of random forest: classification
+##                      Number of trees: 500
+## No. of variables tried at each split: 7
+## 
+##         OOB estimate of  error rate: 1.53%
+## Confusion matrix:
+##      A    B    C    D    E class.error
+## A 1798    2    3    2    1 0.004429679
+## B   17 1201    9    0    0 0.021189894
+## C    0   20 1083    4    0 0.021680217
+## D    0    0   23 1013    3 0.025024062
+## E    0    2    6    5 1152 0.011158798</code></pre>
+<pre class="r"><code>predictionRf &lt;- predict(modRf, newdata=testing)
 scoreRf &lt;- mean(predictionRf != trueClasses)</code></pre>
 <p>Each classifier was tested against the held out training data, giving the following rate for incorrectly identifying the style of movement for each Biceps Curl observation:</p>
 <div id="percent-incorrect-classification" class="section level3">
@@ -162,8 +226,8 @@ scoreRf &lt;- mean(predictionRf != trueClasses)</code></pre>
 </tr>
 <tr class="even">
 <td align="left">50.96</td>
-<td align="left">5.1</td>
-<td align="left">1.67</td>
+<td align="left">5</td>
+<td align="left">1.7</td>
 </tr>
 </tbody>
 </table>
